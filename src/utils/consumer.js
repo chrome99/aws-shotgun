@@ -7,18 +7,9 @@ import { handler } from '../consumer/index.js'
  */
 const app = Consumer.create({
   queueUrl: process.env.SQS_QUEUE_URL,
-  batchSize: parseInt(process.env.SQS_BATCH_SIZE, 1),
+  batchSize: Math.min(parseInt(process.env.SQS_BATCH_SIZE), 10),
   handleMessageBatch: async (messages) => {
-    const processed = []
-
-    for (const message of messages) {
-      // Call the user-defined handler
-      await handler(JSON.parse(message.Body))
-
-      // Add the message to the processed list
-      processed.push(message)
-    }
-
+    const processed = await handler(messages);
     return processed
   },
   sqs: new SQSClient({

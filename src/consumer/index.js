@@ -9,15 +9,45 @@ import { writeOutput } from '../utils/writeOutput.js'
  * @param {object} message The SQS message body as a JSON object
  * @return {void}
  */
-export async function handler(message) {
-  // Make the request
-  const response = await fetch(message.url)
+export async function handler(messages) {
+  try {
+    const responses = await Promise.allSettled(
+      messages.map(async message => {
+        const parsedMessage = JSON.parse(message.Body);
+        const url = parsedMessage.url;
+        const urlWithProtocol = url.startsWith("http") ? url : `http://${url}`;
 
-  // Get the response body as JSON
-  const body = await response.json()
+        console.log("Handling url: ", urlWithProtocol);
+        return await fetchWithTimeout(urlWithProtocol, process.env.FETCH_TIMEOUT);
+      })
+    )
+    
+    console.log("Responses are back!");
+    const okResponses = responses
+    .filter((res) => {
+      if (res.status === "fulfilled") {
+        console.log('Response OK from ', res.value.url);
+        return res;
+      }
+      else { console.error(res.reason) }
+    })
+    .map(res => res.value);
 
-  // (TODO) Add your processing logic here...
+    // upload to s3 bucket
+    await writeOutput(okResponses);
 
-  // Write the output to S3
-  await writeOutput(message, body)
+    return messages;
+  } catch (error) {
+    console.error('An error occurred:', error)
+  }
+}
+
+async function fetchWithTimeout(url, timeout) {  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  const response = await fetch(url, { signal: controller.signal });
+  clearTimeout(timeoutId);
+
+  return response;
 }
